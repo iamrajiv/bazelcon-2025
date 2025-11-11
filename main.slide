@@ -1,0 +1,320 @@
+# Go, Wasm, & Bazel: A Blueprint for Hermetic, High-Performance Web Applications
+11th November 2025
+Tags: bazel, go, wasm
+Summary:
+
+Rajiv Ranjan Singh
+Naman Lakhwani
+
+## Agenda
+
+- **What is WebAssembly**
+- **Go and WebAssembly**
+- **Challenges with Go and WebAssembly**
+- **Solution with Bazel**
+- **Advantages of Bazel builds over go build**
+- **Migration path from go build to Bazel**
+- **Future of Go and WebAssembly with Bazel**
+- **References**
+
+.image images/1.png 150 _
+
+: We’re really excited to be here with all of you today to talk about **Go**, **WebAssembly**, and **Bazel**.
+: We’ll start by understanding **what WebAssembly is**, and take a brief look at **how support for WebAssembly has evolved in Go**.
+: Next, we’ll explore the **challenges developers face when targeting WebAssembly with Go**, especially around build reproducibility and dependency management.
+: Then, we’ll see **how Bazel addresses these challenges**, enabling hermetic, reproducible, and scalable builds for Go to Wasm.
+: We’ll also discuss the **advantages of Bazel builds compared to `go build`**, focusing on caching, parallelism, and consistency.
+: We’ll walk through a simple **migration path from `go build` to Bazel**, so you can apply these concepts in your own projects.
+: Finally, we’ll wrap up with the **future of Go, WebAssembly, and Bazel**.
+
+## Speaker - Rajiv Ranjan Singh
+
+.link x.com/therajiv
+
+- Software Engineer (JL3) at **A.P. Moller Maersk**
+- Graduated from **JSSATE, Bengaluru, India**
+- **GSoC** 2022, **LFX Mentorship** 2021, and **GSoD** 2020 & 2021
+- Mentored in **GSoC** 2023, 2024, and 2025 with **Jenkins**
+- Previously worked with **Lummo**, **redBus**, and **Economize**
+
+: So, a bit about myself. I’m Rajiv, currently working as a Software Engineer at A.P. Moller Maersk at job level 3 in the Platform Engineering team in Bengaluru.
+: I mainly work on backend development in Go, building microservices and scaling infrastructure that supports Maersk’s global shipping operations.
+: I graduated from JSSATE, Bengaluru, with a degree in Information Science and Engineering.
+: I am an open-source enthusiast and actively participate in programs like Google Summer of Code, LFX Mentorship, and Season of Docs. I have also been mentoring in Google Summer of Code for the past three years with the Jenkins organization.
+: I have previously worked with companies such as Lummo, redBus, and Economize.
+: I’m here today with Naman. Naman, would you like to tell us a bit about yourself?
+
+.image images/rajiv.png 250 _
+
+## Speaker - Naman Lakhwani
+
+.link x.com/lakhwani_jii
+
+- Software Developer at **Allen Digital**
+- Previously with **VMware**, **HackerRank**, and **Nirmata**
+- **Kubernetes** v1.26 and v1.30 release shadow
+- **Google Summer of Code** and **Linux Foundation** mentee
+- Graduate of **IIIT Gwalior**
+
+: Hi everyone, I’m Naman Lakhwani, currently working as a Software Developer at Allen Digital.
+: I’ve had the opportunity to work with some great companies, including VMware, HackerRank, and Nirmata.
+: I’ve been involved with the Kubernetes community as a release shadow for versions 1.26 and 1.30.
+: Like Rajiv, I’m also an open-source enthusiast and have participated in Google Summer of Code and Linux Foundation mentorship programs.
+: I graduated from IIIT Gwalior and have always been passionate about building scalable systems.
+: Today, Rajiv and I will walk you through our journey of building production-grade WebAssembly applications with Go and Bazel.
+
+.image images/naman.png 250 _
+
+## What is WebAssembly?
+
+- WebAssembly is a binary instruction format
+- Compact bytecode used as a compilation target
+- Virtual machines compile and execute at runtime
+- Host functions enable external communication
+- `//go:wasmimport` and `//go:wasmexport` are used for function calls
+
+: WebAssembly began as a browser technology designed to run high-performance applications safely within web pages.
+: It defines a binary instruction format executed by a virtual machine, often referred to as the host or runtime. In this context, we’re talking about stack-based virtual machines.
+: At its core, WebAssembly provides only compute and memory operations. However, host environments—like browsers and runtimes—can extend its capabilities by exposing additional functions that WebAssembly modules can import.
+: Over time, WebAssembly has grown beyond the browser. Standalone runtimes such as wazero, wasmtime, wasmer, and wasmedge have made it possible to run Wasm modules on servers, desktops, and even embedded devices.
+: These runtimes can execute compiled WebAssembly programs directly or be embedded within existing applications.
+: For example, a plugin written in Rust can be compiled to WebAssembly and embedded in a Go application, working much like a shared library but with stronger isolation.
+: One of WebAssembly’s biggest strengths is sandboxing—it enforces memory and capability isolation, making it safe to run even untrusted modules.
+: To ensure portability and consistency across runtimes, the WebAssembly System Interface, or WASI, defines a common set of APIs for files, networking, and other host capabilities.
+: In Go, the `//go:wasmimport` directive allows importing host functions into a WebAssembly module, while `//go:wasmexport` enables Go functions to be exported and called from outside the module.
+: Together, these features make WebAssembly a universal, portable runtime for building secure, efficient, and composable applications.
+
+.image images/2.png 300 _
+
+## Go and WebAssembly
+
+- WebAssembly support introduced in Go 1.11 (2018)
+- WASI preview 1 target added in Go 1.21 (2023)
+- Ongoing work toward WASI preview 2 and improved module support
+
+: WebAssembly support was first introduced in Go 1.11 released in 2018.
+: This initial version allowed compiling Go programs to run inside web browsers using a JavaScript-based WebAssembly runtime.
+: At that time, Go’s WebAssembly target was mainly browser-focused and depended heavily on JavaScript bindings for input and output.
+: Over the following years, contributors worked to expand this support beyond browsers.
+: In Go 1.21 released in 2023, a new compilation target was added named `GOOS=wasip1`.
+: This introduced support for the WebAssembly System Interface known as WASI, enabling Go programs to run in standalone WebAssembly runtimes such as wazero and wasmtime without needing a browser.
+: The transition from Go 1.11 to Go 1.21 took about five years and was largely driven by community effort.
+: In early 2023, Go community formed a working group to maintain and improve Go’s WebAssembly support.
+: Today, ongoing work focuses on WASI preview 2, better host interoperability, and aligning Go’s runtime model more closely with the evolving WebAssembly component model.
+: Together these efforts make Go a strong choice for building fast, portable, and sandboxed applications with WebAssembly.
+
+.image images/3.png 400 _
+
+## Challenges with Go and WebAssembly
+
+- Non-hermetic builds lead to inconsistent results across environments
+- Complex dependency management and caching for large Go projects
+- Limited reproducibility when compiling Go to Wasm
+- Slow incremental rebuilds and lack of parallel execution
+- Difficult integration with CI and CD pipelines for WebAssembly builds
+
+: While Go provides native support for compiling to WebAssembly, the build process often suffers from reproducibility and dependency issues.
+: By default, the Go toolchain does not guarantee hermetic builds. Several factors from the local system can influence the output, including environment variables, network access, and system state.
+: A key example is the use of **GOPATH** and **GOMODCACHE**, which are local to each developer’s machine and can lead to different module versions or cached dependencies being used across builds.
+: Developers may experience inconsistent outputs across machines or operating systems because traditional Go builds depend on the local environment, the Go toolchain, caches, and network access.
+: Dependency management becomes more complex as the number of external modules increases, especially when compiling for Wasm where binary reproducibility is critical.
+: Rebuilding large Go projects for WebAssembly can also be slow since the Go toolchain lacks fine-grained caching and parallel execution for Wasm targets.
+: Integrating Go-Wasm builds into CI and CD pipelines can be difficult because each environment might produce slightly different build artifacts.
+: These challenges are where Bazel makes a difference by enabling hermetic, reproducible, and cache-efficient builds for Go to Wasm workflows.
+
+.image images/4.png 300 _
+
+## Solution with Bazel
+
+- Hermetic, sandboxed builds guarantee fully reproducible Wasm artifacts
+- Intelligent and shareable caching drastically speeds up builds through remote caches
+- True reproducibility ensures byte-for-byte identical Wasm binaries
+- Fine-grained parallel execution rebuilds only what is necessary, in parallel
+- Reliable CI and CD integration creates a single, fast, and consistent build pipeline
+
+: Bazel directly addresses these challenges by enforcing hermeticity. Its sandboxed build environment ensures that only declared inputs are used, with no access to your local GOPATH or GOMODCACHE. This guarantees identical Wasm binaries on any machine.
+: For dependency management, Bazel introduces advanced local and remote caching. If a dependency or any part of your code has already been built by you or a teammate, it is fetched from the cache rather than rebuilt, saving significant time.
+: These caching and hermetic properties together provide true reproducibility, which is especially important for WebAssembly. You can be confident that the Wasm binary deployed to production is byte-for-byte the same as the one tested locally.
+: Bazel analyzes the entire dependency graph of your project, allowing it to execute independent build steps in parallel. It rebuilds only what has changed, resulting in highly efficient incremental builds.
+: This ultimately creates a stable and reliable CI and CD pipeline. The same commands that run locally also run in CI, and with remote caching, your pipeline becomes faster, consistent, and predictable.
+
+.image images/5.png 300 _
+
+## Advantages of Bazel Builds over go build
+
+- Hermetic and reproducible builds
+- Advanced and shareable caching
+- Fine-grained parallelism
+- Polyglot build integration
+
+: Bazel extends far beyond the capabilities of go build.
+: While go build focuses on simplicity and speed for local development, Bazel focuses on scalability, reproducibility, and cross-language integration.
+: Its hermetic and sandboxed approach ensures that every build is identical, regardless of the system it runs on.
+: Remote caching allows developers and CI systems to share build results, eliminating redundant compilation across environments.
+: Bazel’s fine-grained action graph enables more parallelism and faster rebuilds, especially in large projects.
+: And since Bazel supports multiple languages, it provides a single, consistent build pipeline for complex polyglot systems.
+: In short, Bazel transforms Go’s build process from local and environment-dependent to global, deterministic, and production-grade.
+
+.image images/6.png 300 _
+
+## Migration from go build to Bazel
+
+**Three files to create:**
+
+1. MODULE.bazel - Downloads exact Go version
+2. BUILD.bazel - Defines build targets
+3. main.go - Your Go code (unchanged)
+
+**Keep:** Your existing go.mod file
+
+: Migrating from go build to Bazel requires just three configuration files.
+: MODULE.bazel tells Bazel what Go version to use and downloads it.
+: BUILD.bazel defines how to build your code for native and WASM.
+: Your actual Go code and go.mod file stay exactly the same.
+
+.image images/7.png 250 _
+
+## Migration from go build to Bazel
+
+1. MODULE.bazel
+
+.code -numbers examples/MODULE.bazel
+
+: This file configures Bazel to use Go and defines all the dependencies and extensions needed for the build.
+: It’s like Bazel’s equivalent of a go.mod — it declares your module name, version, and what external rules or toolchains to use.
+
+: The module() line simply gives your Bazel project an identity.
+: It names the project bazelcon-2025 and sets its version to 1.0.0.
+
+: Next, we declare Bazel dependencies with bazel_dep().
+: These lines tell Bazel to bring in external rule sets — like libraries, but for build logic.
+: Here, we include two main dependencies:
+
+: rules_go — this is the Bazel rule set that actually teaches Bazel how to build Go code.
+: Without it, Bazel wouldn’t know how to compile .go files or link Go binaries.
+
+: gazelle — this is a Bazel extension and code generator for Go.
+: It automatically analyzes your Go source and your go.mod, then generates or updates BUILD.bazel files.
+: That means you don’t have to manually define every source file — Gazelle keeps things in sync automatically.
+
+: Next, the Go SDK setup section defines which Go toolchain to use.
+: We use use_extension() from rules_go to declare the Go SDK extension.
+: Then go_sdk.download(version = "1.23.4") tells Bazel to download and use Go 1.23.4.
+: This guarantees a consistent, pinned Go version for everyone building the project — no local Go installs required.
+
+: Finally, the Go dependencies section connects Bazel to your go.mod file.
+: The go_deps.from_file(go_mod = "//:go.mod") command reads dependencies directly from Go modules.
+: It means Bazel and go mod stay in sync — both use the same dependency graph.
+: The use_repo(go_deps) line makes those dependencies available for your build targets.
+
+: In short — this file makes Bazel fully aware of your Go environment.
+: It defines the toolchain, imports your dependencies, and guarantees everyone uses the same setup — making builds reproducible, consistent, and easy to share.
+
+## Migration from go build to Bazel
+
+2. BUILD.bazel
+
+.image images/8.png 500 _
+
+: This file defines how Bazel should build the Go project.
+: It’s like giving Bazel a recipe — which files to compile, what to output, and for which platform.
+: Instead of running go build manually, Bazel handles everything with clear build rules.
+
+: First, we compile main.go into a Go library target.
+: This library is not an executable — it’s a reusable unit of code.
+: We’ll embed this same library in both the native and wasm binaries.
+: This makes builds faster and consistent — no duplicate work.
+
+: Then we define two binary targets using that library.
+: The first one builds for your host operating system — the native app.
+: The second one builds for WebAssembly — a .wasm file that can run in browsers or WASI runtimes.
+
+: The native binary is just like running go build on your machine.
+: Bazel detects your OS and architecture automatically.
+: It outputs an executable you can run directly.
+
+: The wasm binary uses cross-compilation.
+: We set goos = "wasip1" to target the WASI environment.
+: And goarch = "wasm" to compile for the WebAssembly architecture.
+: This produces a .wasm file that can run in sandboxed environments like browsers, wazero, or wasmtime.
+
+: Finally, we use a genrule to rename the output.
+: Bazel’s internal output paths can be long and hashed.
+: The genrule copies it to a clean, predictable name — app.wasm.
+: That makes it easier to serve, test, or share the build result.
+
+: Overall, Bazel gives us repeatable, hermetic builds.
+: Every build is cached, isolated, and produces identical outputs on any machine.
+: The same Go source can now target multiple platforms — native and WebAssembly — with a single configuration.
+
+## Migration from go build to Bazel
+
+3. main.go
+
+.play -numbers examples/main.go
+
+: Your Go code doesn't change at all.
+: This simple program prints the OS and architecture.
+: It will show different values when built for native vs WASM.
+: Write once, build for multiple platforms.
+
+## Step 4: Build and Run
+
+**Build:**
+
+```bash
+bazel build //:app
+bazel build //:app-wasm
+```
+
+**Run native:**
+
+```bash
+$ ./bazel-bin/app_/app
+Hello, Bazel, WASM, and Go!
+GOOS: darwin, GOARCH: arm64
+```
+
+**Run WASM:**
+
+```bash
+$ wasmtime ./bazel-bin/app-wasm_/app-wasm
+Hello, Bazel, WASM, and Go!
+GOOS: wasip1, GOARCH: wasm
+```
+
+: Build with bazel build followed by the target name.
+: The native binary shows your actual OS and architecture.
+: The WASM binary shows wasip1 and wasm.
+: Same code, different platforms - that's the power of Bazel!
+
+## Future of Go and WebAssembly with Bazel
+
+- **go:wasmexport** [Allows declaring exported functions in Wasm modules](https://github.com/golang/go/issues/42372)
+- **GOARCH=wasm32** [Defines a 32-bit WebAssembly architecture for Go](https://github.com/golang/go/issues/63131)
+- **WASI Preview 2 (GOOS=wasip2)** [Introduces the next generation of WASI APIs](https://github.com/WebAssembly/WASI/tree/main/wasip2)
+- **Bazel Integration** Enables reproducible and hermetic builds for Go to Wasm workflows
+
+: To conclude, let us look at where Go and WebAssembly stand today and how Bazel strengthens this ecosystem.
+: Several major improvements in Go’s WebAssembly support have already landed or are currently in development.
+: With Bazel-based builds, we are moving toward even more reproducible and high-performance WebAssembly toolchains.
+: The `//go:wasmexport` compiler directive introduced in Go 1.24 allows Go functions to be exported into WebAssembly modules.
+: The `GOARCH=wasm32` proposal adds 32-bit pointer and integer support, bringing Go’s WebAssembly target closer to the capabilities of standard Wasm hosts.
+: Work is also underway on the new WASI port, `GOOS=wasip2`, which will enable richer host interactions such as the component model and capability-based APIs.
+: On the Bazel side, integrating these new Go and Wasm features within Bazel’s hermetic build system provides reproducible, cache-efficient, and parallelized workflows.
+: Together, Go’s advancing WebAssembly support and Bazel’s reliable build guarantees make it possible to build high-performance, portable, and maintainable Wasm applications at scale.
+
+.image images/9.png 300 _
+
+## References
+
+- [https://go.dev/wiki/WebAssembly](https://go.dev/wiki/WebAssembly)
+- [https://webassembly.org](https://webassembly.org)
+- [https://bazelcon-2025.fly.dev](https://bazelcon-2025.fly.dev)
+- [https://github.com/iamrajiv/bazelcon-2025](https://github.com/iamrajiv/bazelcon-2025)
+
+.image images/10.png 350 _
+
+: Here are some references we used in this talk.
+: You can also find the slides and additional resources by scanning the QR code.
+: Thank you, we are happy to take your questions.

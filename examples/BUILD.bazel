@@ -1,0 +1,33 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "bazelcon-2025_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/iamrajiv/bazelcon-2025",
+    visibility = ["//visibility:private"],
+)
+
+# Native binary (for your host OS)
+go_binary(
+    name = "bazelcon-2025",
+    embed = [":bazelcon-2025_lib"],
+    visibility = ["//visibility:public"],
+)
+
+# WASM binary using WASI (WebAssembly System Interface)
+go_binary(
+    name = "app-wasm",
+    embed = [":bazelcon-2025_lib"],
+    goos = "wasip1",
+    goarch = "wasm",
+    visibility = ["//visibility:public"],
+)
+
+# Export the wasm file with a clean name
+genrule(
+    name = "app_wasm_file",
+    srcs = [":app-wasm"],
+    outs = ["app.wasm"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
